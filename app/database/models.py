@@ -11,7 +11,7 @@ class History(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, nullable=True)
-    query_time = Column(DateTime, default=datetime.utcnow())
+    query_time = Column(DateTime, default=datetime.now().astimezone())
     article = Column(String, nullable=True)
     subscribed = Column(Boolean, default=False)
 
