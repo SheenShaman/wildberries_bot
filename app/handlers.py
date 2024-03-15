@@ -1,13 +1,15 @@
 from aiogram import Router, F
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import Message
+from aiogram.types import Message, CallbackQuery
 from aiogram.filters import CommandStart
 
 from app.database.database import SessionLocal
 from app.database.models import History
 from app.keyboards import main, inline_keyboard
 from app.product_info import get_product_info
+
+from main import bot
 
 session = SessionLocal()
 
@@ -55,7 +57,6 @@ async def get_product(message: Message, state: FSMContext):
             )
         )
         session.commit()
-
         product_info = ",\n".join([f'{key} - {value}' for key, value in product_response.items()])
         await message.answer(
             text=product_info,
@@ -64,7 +65,7 @@ async def get_product(message: Message, state: FSMContext):
 
 
 @router.message(F.text == "Получить информацию из БД")
-async def get_info_database(message: Message, state: FSMContext):
+async def get_info_database(message: Message):
     last_info = session.query(History).all()[-5:]
     if last_info:
         for query in last_info:
@@ -85,18 +86,43 @@ async def get_info_database(message: Message, state: FSMContext):
 
 
 @router.message(F.text == "Остановить уведомления")
-async def stop_notification(message: Message, state: FSMContext):
-    user_id = message.from_user.id
-    user_history = session.query(History).filter(History.user_id == user_id).order_by(History.query_time.desc()).first
-    if user_history and user_history.subscribe is True:
-        user_history.subscribe = False
+async def stop_notification(message: Message):
+    u_id = message.from_user.id
+    user_history = session.query(History).filter(History.user_id == u_id).order_by(History.query_time.desc()).first()
+    if user_history and user_history.subscribed is True:
+        user_history.subscribed = False
         session.commit()
         await message.answer(
             text="Вы отписаны от уведомлений.",
             reply_markup=inline_keyboard().as_markup()
         )
     else:
-        await message.message.answer(
+        await message.answer(
             text="Вы не подписаны на уведомления.",
+            reply_markup=inline_keyboard().as_markup()
+        )
+
+
+@router.callback_query(F.data == "subscribe")
+async def send_notification(callback: CallbackQuery):
+    u_id = callback.from_user.id
+    user_history = session.query(History).filter(History.user_id == u_id).order_by(History.query_time.desc()).first()
+    if user_history and user_history.subscribed is False:
+        article = user_history.article
+        user_history.subscribed = True
+        session.commit()
+        session.close()
+        response = get_product_info(article)
+        product_info = ",\n".join([f'{key} - {value}' for key, value in response.items()])
+        await bot.send_message(u_id, product_info)
+        await callback.message.answer("Вы подписаны на уведомления.")
+    elif user_history is None:
+        await callback.message.answer(
+            text="Вашей истории запросов еще нет в базе. Начните получать информацию по товарам.",
+            reply_markup=inline_keyboard().as_markup()
+        )
+    else:
+        await callback.message.answer(
+            text="Вы уже подписаны на уведомления.",
             reply_markup=inline_keyboard().as_markup()
         )
